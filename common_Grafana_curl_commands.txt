@@ -1,0 +1,21 @@
+# Extract Last Seen users from Grafana: 
+curl -s http://admin:s3cretPassw0rd@localhost:3000/api/users | jq -r '.[] | [.login, .email, ."lastSeenAt"] | @csv'
+
+# Send metric via the InfluxDB protocol:
+curl -v -X POST -H "Content-Type: application/json" -d 'foo_metric,bar_label=abc cpu_load=55.3' \
+ https://105692:<token>@prometheus-blocks-prod-us-central1.grafana.net/api/v1/push/influx/write
+ 
+# Send log message via CURL to Loki
+curl -v -X POST -H "Content-Type: application/json" -d '{"streams": [{ "stream": {"foo": "bar"}, "values": [ [ "'$(date +%s%N)'", "fizzbuzz" ] ] }]}'  https://51821:<token>@logs-prod-us-central1.grafana.net/loki/api/v1/push
+
+# Send log message via Python code:
+import requests
+import json
+
+url="https://51821:<token>@logs-prod-us-central1.grafana.net/loki/api/v1/push"
+log_line={"streams": [{"stream": {"test_label": "test_value"},"values": [[ "1650578606518248463", "fizzbuzz" ]]}]}
+headers = {'Content-Type': 'application/json'}
+res=requests.post(url,data=json.dumps(log_line), headers=headers)
+
+# Get Grafana health & version
+curl -s http://localhost:3000/api/health
