@@ -1,0 +1,188 @@
+#### Step 1: Install the GEL binary
+yum -y install https://dl.grafana.com/gel/releases/enterprise-logs-1.4.1-1.x86_64.rpm
+setcap 'cap_net_bind_service=+ep' /usr/local/bin/enterprise-logs
+
+#### Step 2: Configure the config.yaml file (We'll change some settings later)
+mv /etc/enterprise-logs/config.yaml /etc/enterprise-logs/config.yaml.old
+cat <<EOT >> /etc/enterprise-logs/config.yaml
+auth_enabled: true
+auth:
+  type: enterprise
+
+server:
+  http_listen_port: 3100
+
+# TODO: Ensure the cluster name is set to match your Grafana Labs License file
+cluster_name: grafana-ent-home-0
+
+license:
+  path: /etc/enterprise-logs/license.jwt
+
+ingester:
+  lifecycler:
+    address: 127.0.0.1
+    ring:
+      kvstore:
+        store: inmemory
+      replication_factor: 1
+    final_sleep: 0s
+  chunk_idle_period: 1h       # Any chunk not receiving new logs in this time will be flushed
+  max_chunk_age: 1h           # All chunks will be flushed when they hit this age, default is 1h
+  chunk_target_size: 1048576  # Loki will attempt to build chunks up to 1.5MB, flushing first if chunk_idle_period or max_chunk_age is reached first
+  chunk_retain_period: 30s    # Must be greater than index read cache TTL if using an index cache (Default index read cache TTL is 5m)
+  max_transfer_retries: 0     # Chunk transfers disabled
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: boltdb-shipper
+      object_store: filesystem
+      schema: v11
+      index:
+        prefix: index_
+        period: 24h
+
+storage_config:
+  boltdb_shipper:
+    active_index_directory: /var/lib/enterprise-logs/boltdb-shipper-active
+    cache_location: /var/lib/enterprise-logs/boltdb-shipper-cache
+    cache_ttl: 24h         # Can be increased for faster performance over longer query periods, uses more disk space
+    shared_store: filesystem
+
+limits_config:
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+
+chunk_store_config:
+  max_look_back_period: 0s
+
+table_manager:
+  retention_deletes_enabled: false
+  retention_period: 0s
+
+ruler:
+  storage:
+    type: local
+    local:
+      directory: /var/lib/enterprise-logs/rules
+  rule_path: /var/lib/enterprise-logs/rules-temp
+  alertmanager_url: http://localhost:9093
+  ring:
+    kvstore:
+      store: inmemory
+  enable_api: true
+
+compactor:
+  working_directory: /var/lib/enterprise-logs/compactor
+  shared_store: filesystem
+
+admin_client:
+  storage:
+    type: s3
+    s3:
+      endpoint: localhost:9199
+      bucket_name: <your_bucket_name>
+      access_key_id: <your_access_key>
+      secret_access_key: <your_secret_key>
+      insecure: true
+EOT
+
+#### Step 3: Copy license file to the machine, and move to:
+mv /tmp/license.jwt /etc/enterprise-logs/license.jwt
+
+#### Step 4: Install min.io (Skip steps 4/5/6 if you have your own object store) 
+yum -y install https://dl.min.io/server/minio/release/linux-amd64/minio-20220603014053.0.0.x86_64.rpm
+
+# Set up min.io server
+mkdir /data
+
+cat <<EOT >> /etc/default/minio
+# Volume to be used for MinIO server.
+MINIO_VOLUMES="/data"
+# Use if you want to run MinIO on a custom port.
+MINIO_OPTS="--address :9199 --console-address :9001"
+# Root user for the server.
+MINIO_ROOT_USER=admin
+# Root secret for the server.
+MINIO_ROOT_PASSWORD=admin123
+EOT
+
+#### Step 5: Set up the service file for min.io 
+cd /etc/systemd/system/; curl -O https://raw.githubusercontent.com/minio/minio-service/master/linux-systemd/minio.service 
+sed -i 's/minio-user/root/g' /etc/systemd/system/minio.service 
+systemctl daemon-reload
+systemctl restart minio
+
+#### Step 6: Set up min.io client and configure bucket and access
+wget -O /usr/local/bin/mc https://dl.min.io/client/mc/release/linux-amd64/mc
+chmod a+x /usr/local/bin/mc
+mc alias set myminio/ http://192.168.0.138:9199 admin admin123
+
+# Create the GEL bucket
+# https://docs.min.io/docs/minio-client-quickstart-guide.html
+mc mb myminio/gel
+
+# Create the GEL user
+# https://docs.min.io/docs/minio-multi-user-quickstart-guide.html
+#mc admin user add myminio geluser gelpassword123
+
+# Create the GEL service account
+#https://docs.min.io/minio/baremetal/reference/minio-mc-admin/mc-admin-user-svcacct.html
+mc admin user svcacct add myminio geluser
+
+# Copy out the access and secret key over to /etc/enterprise-logs/config.yaml
+#Access Key: NK2FMA2KV9AK92UXLF6Q
+#Secret Key: 3+f+7o2kf7eXH8KMcLR2Kohg0KGboHPbhUgIm+BE
+
+# Set readwrite policy
+mc admin policy set myminio readwrite user=geluser
+
+
+#### Step 7: Download promtail
+wget https://github.com/grafana/loki/releases/download/v2.5.0/promtail-linux-amd64.zip
+unzip promtail-linux-amd64.zip
+mv promtail-linux-amd64 /usr/local/bin/promtail-linux-amd64
+chmod a+x /usr/local/bin/promtail-linux-amd64
+
+### STOP HERE ###
+### Ensure you have done all of the above, including license, before starting GEL
+systemctl enable enterprise-logs
+systemctl restart enterprise-logs
+
+##################
+#### Step 8: In Grafana, set up the GEL plugin and create your first tenant and token
+# Run this to get the initial admin token
+/usr/local/bin/enterprise-logs -config.file=/etc/enterprise-logs/config.yaml -license.path=/var/lib/enterprise-logs/license.jwt -log.level=warn -target=tokengen
+##################
+
+
+#### Step 9: Set up an example promtail config file. Remember to replace the username
+cat <<EOT >> /etc/promtail.conf
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://192.168.0.132:3100/loki/api/v1/push
+    basic_auth:
+      username: 'tenant1'
+      password_file: '/etc/promtail.password'
+
+scrape_configs:
+- job_name: system
+  static_configs:
+  - targets:
+      - localhost
+    labels:
+      job: varlogs
+      __path__: /var/log/*log
+EOT
+
+echo "<token generated in Grafana GEL>" > /etc/promtail.password
+echo "YXAxLXQxOiE0XC0yLiFMOGAxNjdiWiE5ImAzMTh1YA==" > /etc/promtail.password
+
+promtail-linux-amd64 -config.file /etc/promtail.conf
+
