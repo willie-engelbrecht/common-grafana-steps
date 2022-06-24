@@ -18,7 +18,14 @@ scrape_configs:
       labels:
         job: varlogs
         __path__: /var/logtest/system.log
+        
 - job_name: kafka
+  pipeline_stages:
+    - json:
+        expressions:
+          deviceid: deviceid
+    - labels:
+        deviceid:
   kafka:
     brokers:
     - kafka_broker:9092
