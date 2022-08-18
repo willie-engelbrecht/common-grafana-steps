@@ -3,7 +3,7 @@ curl -s http://admin:s3cretPassw0rd@localhost:3000/api/users | jq -r '.[] | [.lo
 
 # Send metric via the InfluxDB protocol:
 curl -v -X POST -H "Content-Type: application/json" -d 'foo_metric,bar_label=abc cpu_load=55.3' \
- https://105692:<token>@prometheus-blocks-prod-us-central1.grafana.net/api/v1/push/influx/write
+ https://105692:<token>@influx-blocks-prod-us-central1.grafana.net/api/v1/push/influx/write
  
 # Send log message via CURL to Loki
 curl -v -X POST -H "Content-Type: application/json" -d '{"streams": [{ "stream": {"foo": "bar"}, "values": [ [ "'$(date +%s%N)'", "fizzbuzz" ] ] }]}'  https://51821:<token>@logs-prod-us-central1.grafana.net/loki/api/v1/push
