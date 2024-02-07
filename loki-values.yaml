@@ -1,0 +1,22 @@
+loki:
+  commonConfig:
+    replication_factor: 1
+  storage:
+    bucketNames:
+      chunks: wengelbrecht-loki
+      ruler: wengelbrecht-loki
+      admin: wengelbrecht-loki
+    type: s3
+    s3:
+      region: eu-west-2
+      secretAccessKey: <removed>
+      accessKeyId: <removed>
+
+write:
+  replicas: 1
+
+read:
+  replicas: 1
+
+backend:
+  replicas: 1
