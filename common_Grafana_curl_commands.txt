@@ -12,6 +12,9 @@ kubectl port-forward loki-gateway-7b78b7c84b-pzwzq -n default 3100:8080 --addres
 curl -v -X POST -H "Content-Type: application/json" -d '{"streams": [{ "stream": {"foo": "bar"}, "values": [ [ "'$(date +%s%N)'", "fizzbuzz" ] ] }]}'  https://51821:<token>@logs-prod-us-central1.grafana.net/loki/api/v1/push
 curl -v -X POST -H "Content-Type: application/json" -H "X-Scope-OrgID: account1" -d '{"streams": [{ "stream": {"foo": "bar"}, "values": [ [ "'$(date +%s%N)'", "fizzbuzz" ] ] }]}'  http://localhost:3100/loki/api/v1/push
 
+# Enter a running pod
+kubectl exec --stdin --tty loki-write-0 -- /bin/sh
+
 # Send log message via Python code:
 import requests
 import json
