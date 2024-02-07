@@ -4,9 +4,13 @@ curl -s http://admin:s3cretPassw0rd@localhost:3000/api/users | jq -r '.[] | [.lo
 # Send metric via the InfluxDB protocol:
 curl -v -X POST -H "Content-Type: application/json" -d 'foo_metric,bar_label=abc cpu_load=55.3' \
  https://105692:<token>@influx-blocks-prod-us-central1.grafana.net/api/v1/push/influx/write
- 
+
+# Port forward to the gateway pod of Loki
+kubectl port-forward loki-gateway-7b78b7c84b-pzwzq -n default 3100:8080 --address='0.0.0.0'
+
 # Send log message via CURL to Loki
 curl -v -X POST -H "Content-Type: application/json" -d '{"streams": [{ "stream": {"foo": "bar"}, "values": [ [ "'$(date +%s%N)'", "fizzbuzz" ] ] }]}'  https://51821:<token>@logs-prod-us-central1.grafana.net/loki/api/v1/push
+curl -v -X POST -H "Content-Type: application/json" -H "X-Scope-OrgID: account1" -d '{"streams": [{ "stream": {"foo": "bar"}, "values": [ [ "'$(date +%s%N)'", "fizzbuzz" ] ] }]}'  http://localhost:3100/loki/api/v1/push
 
 # Send log message via Python code:
 import requests
