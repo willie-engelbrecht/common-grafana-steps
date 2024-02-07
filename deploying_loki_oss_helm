@@ -1,0 +1,32 @@
+# Install K8s with: https://github.com/alexellis/k3sup
+curl -sLS https://get.k3sup.dev | sh
+
+k3sup install \
+  --local \
+  --context localk3s
+
+# After install:
+export KUBECONFIG=/root/kubeconfig
+kubectl get node -o wide
+kubectl get pods -o wide
+
+# Install helm:
+curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+chmod 700 get_helm.sh
+./get_helm.sh
+
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update
+
+# Create a values.yaml file:
+wget https://raw.githubusercontent.com/willie-engelbrecht/common-grafana-steps/main/loki-values.yaml
+
+# Run helm against your yaml file
+Install: helm install --values loki-values.yaml loki grafana/loki
+Upgrade: helm upgrade --values loki-values.yaml loki grafana/loki
+
+# Port forward: 
+kubectl port-forward loki-gateway-7b78b7c84b-pzwzq -n default 3100:8080 --address='0.0.0.0'
+
+# Send test log
+curl -v -X POST -H "Content-Type: application/json" -H "X-Scope-OrgID: account1" -d '{"streams": [{ "stream": {"foo": "bar"}, "values": [ [ "'$(date +%s%N)'", "fizzbuzz" ] ] }]}'  http://localhost:3100/loki/api/v1/push
